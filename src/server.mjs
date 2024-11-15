@@ -33,8 +33,13 @@ import session from 'express-session'
 import { createClient as createRedisClient } from 'redis'
 import RedisStore from 'connect-redis'
 import { readFileSync } from 'fs'
+import { PublicClientApplication } from '@azure/msal-node'
+import authConfig from './authConfig.mjs'
+import crypto from 'crypto'
 
 const app = new express()
+// Get values from env vars or defaults where not provided
+const port = process.env.PORT || 3000
 
 // View engine setup, static content & session
 const __dirname = path.resolve()
@@ -49,6 +54,101 @@ const sessionConfig = {
   resave: false,
   saveUninitialized: false,
 }
+
+// MSAL Auth setup
+const msalClient = new PublicClientApplication(authConfig)
+
+app.use(session({
+  secret: '1234567890QWERTY',
+  resave: false,
+  saveUninitialized: false,
+}))
+
+const generateCodeVerifier = () => {
+  return crypto.randomBytes(32).toString('base64url')
+}
+
+const generateCodeChallenge = (codeVerifier) => {
+  return crypto.createHash('sha256').update(codeVerifier).digest('base64url')
+}
+
+app.get('/login', (req, res) => {
+  const codeVerifier = generateCodeVerifier()
+  const codeChallenge = generateCodeChallenge(codeVerifier)
+  req.session.codeVerifier = codeVerifier
+
+  const authCodeUrlParameters = {
+    scopes: ['user.read'],
+    redirectUri: 'https://nodejs-demoapp.lemonrock-97154e27.canadacentral.azurecontainerapps.io/signin',
+    codeChallenge: codeChallenge,
+    codeChallengeMethod: 'S256'
+  }
+
+  msalClient.getAuthCodeUrl(authCodeUrlParameters)
+  .then((response) => {
+    res.redirect(response)
+  })
+  .catch((error) => {
+    console.error('Auth URL Error:', error); // Better error logging
+    res.status(500).send('Authentication initialization failed');
+  })
+})
+
+app.get('/signin', (req, res) => {
+  const tokenRequest = {
+    code: req.query.code,
+    scopes: ['user.read'],
+    redirectUri: 'https://nodejs-demoapp.lemonrock-97154e27.canadacentral.azurecontainerapps.io/signin',
+    codeVerifier: req.session.codeVerifier
+  };
+
+  msalClient.acquireTokenByCode(tokenRequest)
+    .then((response) => {
+      req.session.accessToken = response.accessToken;
+      console.log('Token acquired successfully');
+      res.redirect('/');
+    })
+    .catch((error) => {
+      console.error('Token acquisition failed:', JSON.stringify(error));
+      res.redirect('/login');
+    });
+});
+
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.redirect('/')
+  })
+})
+
+const ensureAuthenticated = (req, res, next) => {
+  if (req.session.accessToken) {
+    return next()
+  }
+  res.redirect('/login')
+}
+
+app.get('/protected', ensureAuthenticated, (req, res) => {
+  res.send('This is a protected route.')
+})
+
+// Update server creation to bind to all interfaces
+const server = app.listen(port, '0.0.0.0', () => {
+  console.log(`Server listening on port ${port}`);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    process.exit(0);
+  });
+});
+
+// Handle container health checks
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
 
 // Very optional Redis session store - only really needed when running multiple instances
 if (process.env.REDIS_SESSION_HOST) {
@@ -142,12 +242,5 @@ app.use(function (err, req, res, next) {
     error: err,
   })
 })
-
-// Get values from env vars or defaults where not provided
-const port = process.env.PORT || 3000
-
-// Start the server
-app.listen(port)
-console.log(`### 🌐 Server listening on port ${port}`)
 
 export default app

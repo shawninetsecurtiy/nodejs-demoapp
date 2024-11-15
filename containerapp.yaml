@@ -1,0 +1,13 @@
+properties:
+  configuration:
+    ingress:
+      external: true
+      targetPort: 3000
+    dapr: {}
+  template:
+    containers:
+      - name: nodejs-demoapp
+        image: myshtccontainerregistry.azurecr.io/nodejs-demoapp:latest
+        env:
+          - name: PORT
+            value: "3000"

@@ -9,7 +9,7 @@ param appName string = 'nodejs-demoapp'
 param location string = resourceGroup().location
 
 @description('Container image to deploy')
-param image string = 'myshtccontainerregistry.azurecr.io/nodejs-demoapp:latest'
+param image string = 'ghcr.io/benc-uk/nodejs-demoapp:latest'
 
 @description('Optional feature: OpenWeather API Key')
 param weatherApiKey string = ''
@@ -22,9 +22,6 @@ param todoMongoConnstr string = ''
 
 @description('Optional feature: Enable auth with EntraID, and a client id')
 param entraAppId string = ''
-
-@description('Managed identity resource ID for ACR')
-param managedIdentityResourceId string
 
 // ===== Variables ============================================================
 
@@ -62,28 +59,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   location: location
   name: appName
 
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${managedIdentityResourceId}': {}
-    }
-  }
-
   properties: {
     environmentId: appEnv.id
-
-    configuration: {
-      ingress: {
-        external: true
-        targetPort: 3000
-      }
-      registries: [
-        {
-          server: 'myshtccontainerregistry.azurecr.io'
-          identity: managedIdentityResourceId
-        }
-      ]
-    }
 
     template: {
       containers: [
@@ -114,6 +91,13 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           ]
         }
       ]
+    }
+
+    configuration: {
+      ingress: {
+        external: true
+        targetPort: 3000
+      }
     }
   }
 }

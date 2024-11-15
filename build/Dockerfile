@@ -11,6 +11,9 @@ WORKDIR /app
 COPY src/package*.json ./
 RUN npm install --production --silent
 
+# Install additional packages for authentication
+RUN npm install @azure/msal-node express express-session
+
 # NPM is done, now copy in the rest of the project to the workdir
 COPY src/. .
 
