@@ -6,7 +6,14 @@
     Node.js Demo App
   </h2>
 
+  <div class="build-info small text-muted">
+    Version: <%= process.env.npm_package_version %> 
+    Built: <%= new Date().toISOString() %>
+  </div>
+
   <div class="lead mt-4">
+    Hello World! <br/>
+    Welcome to the Node.js Demo App! 🎉 <br/>
     This is a simple Node.js web app using the Express framework and EJS templates. It has been designed with cloud
     demos & containers in mind. Demonstrating capabilities such as auto scaling, deployment to Azure or Kubernetes, or
     anytime you want something quick and lightweight to run & deploy 😄

@@ -114,12 +114,6 @@ app.get('/signin', (req, res) => {
     });
 });
 
-app.get('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.redirect('/')
-  })
-})
-
 const ensureAuthenticated = (req, res, next) => {
   if (req.session.accessToken) {
     return next()
@@ -127,9 +121,31 @@ const ensureAuthenticated = (req, res, next) => {
   res.redirect('/login')
 }
 
+// In server.mjs, update the root route to pass user auth state
+app.get('/', ensureAuthenticated, (req, res) => {
+  res.render('index', {
+    title: 'Home',
+    isAuthenticated: !!req.session.accessToken,
+    user: req.session.user || null
+  });
+});
+
 app.get('/protected', ensureAuthenticated, (req, res) => {
   res.send('This is a protected route.')
 })
+
+// Update logout route to handle MSAL session
+app.get('/logout', (req, res) => {
+  // Get post-logout redirect URI
+  const logoutUri = `https://${process.env.WEBSITE_HOSTNAME}`;
+  
+  // Clear session
+  req.session.destroy(() => {
+    // Redirect to MSAL logout
+    const logoutUrl = `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/logout?post_logout_redirect_uri=${encodeURIComponent(logoutUri)}`;
+    res.redirect(logoutUrl);
+  });
+});
 
 // Update server creation to bind to all interfaces
 const server = app.listen(port, '0.0.0.0', () => {
