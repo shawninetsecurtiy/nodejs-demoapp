@@ -8,14 +8,15 @@ import express from 'express'
 const router = express.Router()
 import os from 'os'
 import fs from 'fs'
+import { ManagedIdentityCredential } from "@azure/identity";
 
 // =======================================================================
 // Middleware to pass user data from session to all views
 // =======================================================================
 router.use(function (req, res, next) {
-  if (req.session.user) {
-    res.locals.user = req.session.user
-  }
+  // Set both user and authentication status
+  res.locals.user = req.session?.user || null
+  res.locals.isAuthenticated = !!req.session?.user?.account
   next()
 })
 
@@ -116,9 +117,14 @@ router.get('/tools/load', function (req, res, next) {
 // Page to generate server side errors, good for App Insights demos
 // =======================================================================
 router.get('/tools/error', function (req, res, next) {
-  // Call some gibberish (object doesn't exist) which should trigger an exception
-  // eslint-disable-next-line no-undef
-  beansOnToast.eat()
+  try {
+    // Intentionally throw an error for demo purposes
+    throw new Error('This is a demo error from /tools/error');
+  } catch (err) {
+    err.status = 500;
+    err.details = 'This error was intentionally generated for testing purposes';
+    next(err);
+  }
 })
 
 // =======================================================================
@@ -141,6 +147,49 @@ router.get('/tools/gc', function (req, res, next) {
     message: message,
   })
 })
+
+// =======================================================================
+// Get hello world from API
+// =======================================================================
+router.get('/hello', async function (req, res, next) {
+  try {
+    console.log('Initializing managed identity credential...');
+    const credential = new ManagedIdentityCredential('7d75d2b9-58c0-4478-b4f0-44679da0c500');
+    
+    console.log('Getting token...');
+    const scope = 'api://shtc-hello-world-api/.default';
+    const token = await credential.getToken(scope);
+    console.log('Token acquired successfully');
+    
+    const apiUrl = 'https://hello-world-api.internal.lemonrock-97154e27.canadacentral.azurecontainerapps.io/';
+    console.log('Calling API:', apiUrl);
+    
+    const response = await fetch(apiUrl, {
+      headers: {
+        'Authorization': `Bearer ${token.token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    console.log('API Response received');
+    
+    res.render('hello', {
+      title: 'Node DemoApp: Hello World',
+      message: data.message
+    });
+  } catch (err) {
+    console.error('Error:', {
+      name: err.name,
+      message: err.message,
+      stack: err.stack
+    });
+    next(err);
+  }
+});
 
 export default router
 

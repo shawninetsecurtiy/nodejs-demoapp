@@ -1,0 +1,33 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "entraAppId": {
+            "value": "0b2f7424-ac58-413e-91cf-c1b97c16f3f7"
+        },
+        "entraTenantId": {
+            "value": "99d1cd35-2846-46f1-935e-59047152a180"
+        },
+        "authRedirectUri": {
+            "value": "https://nodejs-demoapp.lemonrock-97154e27.canadacentral.azurecontainerapps.io/signin"
+        },
+        "appName": {
+            "value": "nodejs-demoapp"
+        },
+        "location": {
+            "value": "canadacentral"
+        },
+        "image": {
+            "value": "myshtccontainerregistry.azurecr.io/nodejs-demoapp:latest"
+        },
+        "weatherApiKey": {
+            "value": ""
+        },
+        "appInsightsConnString": {
+            "value": ""
+        },
+        "todoMongoConnstr": {
+            "value": ""
+        }
+    }
+} 

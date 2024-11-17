@@ -130,9 +130,9 @@
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link btn btn-danger btn-lg mx-1 shadow" href="/logout" onclick="return confirm('Are you sure you want to logout?')">
-              <i class="fas fa-sign-out-alt fa-fw"></i>
-              Logout
+            <a class="nav-link" href="/hello">
+              <i class="fas fa-handshake"></i>
+              Hello World
             </a>
           </li>
           <%if (process.env.WEATHER_API_KEY) { %>
@@ -155,21 +155,21 @@
 
         <%if (process.env.ENTRA_APP_ID) { %>
           <ul class="navbar-nav d-flex">
-            &nbsp; <%if (typeof user==='undefined' ) { %>
+            <% if (!isAuthenticated || !user) { %>
               <li class="nav-item">
                 <a class="nav-link btn btn-info btn-lg mx-1 shadow" href="/login">
                   <i class="fas fa-user fa-fw"></i>
                   Login
                 </a>
               </li>
-              <% } else { %>
-                <li class="nav-item">
-                  <a class="nav-link btn btn-success btn-lg mx-1 shadow" href="/account">
-                    <i class="fas fa-user-circle fa-fw"></i>
-                    <%= user.account.name %>
-                  </a>
-                </li>
-                <% } %>
+            <% } else { %>
+              <li class="nav-item">
+                <a class="nav-link btn btn-success btn-lg mx-1 shadow" href="/account">
+                  <i class="fas fa-user-circle fa-fw"></i>
+                  <%= user?.account?.name || 'Account' %>
+                </a>
+              </li>
+            <% } %>
           </ul>
           <% } %>
       </div>

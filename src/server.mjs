@@ -33,9 +33,6 @@ import session from 'express-session'
 import { createClient as createRedisClient } from 'redis'
 import RedisStore from 'connect-redis'
 import { readFileSync } from 'fs'
-import { PublicClientApplication } from '@azure/msal-node'
-import authConfig from './authConfig.mjs'
-import crypto from 'crypto'
 
 const app = new express()
 // Get values from env vars or defaults where not provided
@@ -49,102 +46,34 @@ app.use(express.static(path.join(__dirname, 'public')))
 
 // Session required for auth and MSAL signin flow
 const sessionConfig = {
-  secret: packageJson.name,
+  secret: process.env.SESSION_SECRET || packageJson.name,
   cookie: { secure: false },
   resave: false,
   saveUninitialized: false,
 }
 
-// MSAL Auth setup
-const msalClient = new PublicClientApplication(authConfig)
+// Update the root route to be simpler since auth is handled elsewhere
+app.get('/', (req, res) => {
+  console.log('DEBUG - Root route:', {
+    session: !!req.session,
+    isAuthenticated: !!req.session?.user?.account,
+    userExists: !!req.session?.user,
+    url: req.url
+  });
 
-app.use(session({
-  secret: '1234567890QWERTY',
-  resave: false,
-  saveUninitialized: false,
-}))
-
-const generateCodeVerifier = () => {
-  return crypto.randomBytes(32).toString('base64url')
-}
-
-const generateCodeChallenge = (codeVerifier) => {
-  return crypto.createHash('sha256').update(codeVerifier).digest('base64url')
-}
-
-app.get('/login', (req, res) => {
-  const codeVerifier = generateCodeVerifier()
-  const codeChallenge = generateCodeChallenge(codeVerifier)
-  req.session.codeVerifier = codeVerifier
-
-  const authCodeUrlParameters = {
-    scopes: ['user.read'],
-    redirectUri: 'https://nodejs-demoapp.lemonrock-97154e27.canadacentral.azurecontainerapps.io/signin',
-    codeChallenge: codeChallenge,
-    codeChallengeMethod: 'S256'
-  }
-
-  msalClient.getAuthCodeUrl(authCodeUrlParameters)
-  .then((response) => {
-    res.redirect(response)
-  })
-  .catch((error) => {
-    console.error('Auth URL Error:', error); // Better error logging
-    res.status(500).send('Authentication initialization failed');
-  })
-})
-
-app.get('/signin', (req, res) => {
-  const tokenRequest = {
-    code: req.query.code,
-    scopes: ['user.read'],
-    redirectUri: 'https://nodejs-demoapp.lemonrock-97154e27.canadacentral.azurecontainerapps.io/signin',
-    codeVerifier: req.session.codeVerifier
-  };
-
-  msalClient.acquireTokenByCode(tokenRequest)
-    .then((response) => {
-      req.session.accessToken = response.accessToken;
-      console.log('Token acquired successfully');
-      res.redirect('/');
-    })
-    .catch((error) => {
-      console.error('Token acquisition failed:', JSON.stringify(error));
-      res.redirect('/login');
+  try {
+    res.render('index', {
+      title: 'Home',
+      isAuthenticated: req.session?.user?.account ? true : false,
+      user: req.session?.user?.account || null
     });
-});
-
-const ensureAuthenticated = (req, res, next) => {
-  if (req.session.accessToken) {
-    return next()
+  } catch (error) {
+    console.error('DEBUG - Render error:', {
+      message: error.message,
+      stack: error.stack
+    });
+    res.status(500).send('Error rendering page');
   }
-  res.redirect('/login')
-}
-
-// In server.mjs, update the root route to pass user auth state
-app.get('/', ensureAuthenticated, (req, res) => {
-  res.render('index', {
-    title: 'Home',
-    isAuthenticated: !!req.session.accessToken,
-    user: req.session.user || null
-  });
-});
-
-app.get('/protected', ensureAuthenticated, (req, res) => {
-  res.send('This is a protected route.')
-})
-
-// Update logout route to handle MSAL session
-app.get('/logout', (req, res) => {
-  // Get post-logout redirect URI
-  const logoutUri = `https://${process.env.WEBSITE_HOSTNAME}`;
-  
-  // Clear session
-  req.session.destroy(() => {
-    // Redirect to MSAL logout
-    const logoutUrl = `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/logout?post_logout_redirect_uri=${encodeURIComponent(logoutUri)}`;
-    res.redirect(logoutUrl);
-  });
 });
 
 // Update server creation to bind to all interfaces
@@ -218,7 +147,24 @@ app.use('/', apiRoutes)
 
 // Initialize authentication only when configured
 if (process.env.ENTRA_APP_ID) {
-  app.use('/', authRoutes)
+  console.log('=== Auth Configuration ===');
+  console.log('ENTRA_APP_ID:', process.env.ENTRA_APP_ID);
+  console.log('ENTRA_TENANT_ID:', process.env.ENTRA_TENANT_ID);
+  console.log('AUTH_REDIRECT_URI:', process.env.AUTH_REDIRECT_URI);
+  console.log('Mounting auth routes...');
+  
+  app.use('/', authRoutes);
+  
+  console.log('Auth routes mounted successfully');
+  
+  // List all registered routes for debugging
+  app._router.stack.forEach(function(r){
+    if (r.route && r.route.path){
+      console.log('Registered route:', r.route.path);
+    }
+  });
+} else {
+  console.warn('Warning: ENTRA_APP_ID not set, auth routes not mounted');
 }
 
 // Optional routes based on certain settings/features being enabled
@@ -242,21 +188,21 @@ app.use(function (req, res, next) {
 })
 
 // Error handler
-app.use(function (err, req, res, next) {
-  console.error(`### 💥 ERROR: ${err.message}`)
+app.use((err, req, res, next) => {
+  console.error('Global error:', {
+    url: req.url,
+    message: err.message,
+    stack: err.stack
+  });
 
-  // App Insights
-  if (appInsights.defaultClient) {
-    appInsights.defaultClient.trackException({ exception: err })
-  }
-
-  // Render the error page
-  res.status(err.status || 500)
+  res.status(err.status || 500);
   res.render('error', {
     title: 'Error',
     message: err.message,
     error: err,
-  })
-})
+    isAuthenticated: req.session?.user?.account ? true : false,
+    user: req.session?.user?.account || null
+  });
+});
 
 export default app

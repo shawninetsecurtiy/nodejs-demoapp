@@ -21,12 +21,16 @@ const AUTH_CALLBACK_PATH = 'signin'
 
 let msalApp
 
-// Create MSAL public application object, only if ENTRA_APP_ID enabled
+// Add session secret from environment variables
+const SESSION_SECRET = process.env.SESSION_SECRET || '1234567890QWERTY'
+
+// Update MSAL configuration to be more robust
 if (process.env.ENTRA_APP_ID) {
   msalApp = new msal.PublicClientApplication({
     auth: {
       clientId: process.env.ENTRA_APP_ID,
-      authority: AUTH_ENDPOINT,
+      authority: `https://login.microsoftonline.com/${process.env.ENTRA_TENANT_ID}`,
+      redirectUri: process.env.AUTH_REDIRECT_URI
     },
 
     system: {
@@ -43,6 +47,14 @@ if (process.env.ENTRA_APP_ID) {
   console.log(`### 🔐 MSAL configured using client ID: ${process.env.ENTRA_APP_ID}`)
 }
 
+// Add middleware to check authentication status
+const ensureAuthenticated = (req, res, next) => {
+  if (!req.session?.user?.account) {
+    return res.redirect('/login')
+  }
+  next()
+}
+
 // ==============================
 // Routes
 // ==============================
@@ -51,7 +63,7 @@ if (process.env.ENTRA_APP_ID) {
 router.get('/login', async (req, res) => {
   console.log('### 🔐 MSAL login, start PKCE flow...')
   const host = req.get('host')
-  const redirectUri = `${host.indexOf('localhost') == 0 ? 'http' : 'https'}://${host}/${AUTH_CALLBACK_PATH}`
+  const redirectUri = process.env.AUTH_REDIRECT_URI
 
   try {
     // Generate PKCE Codes before starting the authorization flow
@@ -89,6 +101,8 @@ router.get('/login', async (req, res) => {
       title: 'PKCE redirect error',
       message: err,
       error: err,
+      isAuthenticated: !!req.session?.user?.account,
+      user: req.session?.user?.account || null
     })
   }
 })
@@ -96,10 +110,10 @@ router.get('/login', async (req, res) => {
 // This route is called by Azure AD after the user has logged in
 // It will exchange the auth code for an access token
 router.get(`/${AUTH_CALLBACK_PATH}`, async (req, res) => {
-  console.log('### 🔐 MSAL login, code received...')
-
+  console.log('### 🔐 MSAL login, code received...');
+  
   const host = req.get('host')
-  const redirectUri = `${host.indexOf('localhost') == 0 ? 'http' : 'https'}://${host}/${AUTH_CALLBACK_PATH}`
+  const redirectUri = process.env.AUTH_REDIRECT_URI
 
   // Add PKCE code verifier to token request object
   const tokenRequest = {
@@ -111,36 +125,39 @@ router.get(`/${AUTH_CALLBACK_PATH}`, async (req, res) => {
   }
 
   try {
-    const tokenResponse = await msalApp.acquireTokenByCode(tokenRequest)
-    if (!tokenResponse) {
-      throw 'ERROR! Failed to acquire token by code'
-    }
+    const tokenResponse = await msalApp.acquireTokenByCode(tokenRequest);
+    console.log('Token response:', {
+      account: tokenResponse.account,
+      hasToken: !!tokenResponse.accessToken
+    });
 
     // Store user details in session
     req.session.user = {
-      account: tokenResponse.account,
-      accessToken: tokenResponse.accessToken,
-    }
+      account: {
+        name: tokenResponse.account.name,
+        username: tokenResponse.account.username,
+        tenantId: tokenResponse.account.tenantId,
+        environment: tokenResponse.account.environment,
+        homeAccountId: tokenResponse.account.homeAccountId
+      },
+      accessToken: tokenResponse.accessToken
+    };
 
-    // Track user login as an App Insights custom event
-    if (appInsights && appInsights.defaultClient) {
-      appInsights.defaultClient.trackEvent({
-        name: 'userLogin',
-        properties: {
-          user: tokenResponse.account.username,
-          tenantId: tokenResponse.account.tenantId,
-          userId: tokenResponse.uniqueId,
-        },
-      })
-    }
+    console.log('Session after login:', {
+      user: req.session.user,
+      account: req.session.user.account
+    });
 
-    res.redirect('/account')
+    res.redirect('/account');
   } catch (err) {
+    console.error('Token acquisition error:', err);
     res.render('error', {
-      title: 'MSAL authentication failed',
-      message: err,
+      title: 'Authentication Error',
+      message: err.message,
       error: err,
-    })
+      isAuthenticated: false,
+      user: null
+    });
   }
 })
 
@@ -150,13 +167,10 @@ router.get('/logout', function (req, res) {
   })
 })
 
-router.get('/account', async function (req, res) {
-  // Protect this route by checking if user is logged in
-  if (!req.session.user) {
-    res.redirect('/login')
-    return
-  }
-
+// Update account route to use middleware
+router.get('/account', ensureAuthenticated, async function (req, res) {
+  console.log('Account route - session user:', req.session.user);
+  
   let details = {}
   let photo = null
 
@@ -168,11 +182,46 @@ router.get('/account', async function (req, res) {
     console.log('### 💥 ERROR! ', err)
   }
 
+  // Ensure we have the correct user structure
+  const user = {
+    account: req.session.user.account || {},
+    accessToken: req.session.user.accessToken
+  };
+
   res.render('account', {
     title: 'Node DemoApp: Account',
-    details: details,
+    isAuthenticated: true,
+    user: user,
+    details: details || {},
     photo: photo,
   })
 })
 
+// Add a helper route to check auth status
+router.get('/auth-status', (req, res) => {
+  res.json({
+    isAuthenticated: !!req.session.user,
+    user: req.session.user ? {
+      name: req.session.user.account.name,
+      username: req.session.user.account.username
+    } : null
+  })
+})
+
+// Add this near your other routes
+router.get('/debug-session', (req, res) => {
+  res.json({
+    hasSession: !!req.session,
+    hasUser: !!req.session?.user,
+    sessionContent: {
+      user: req.session?.user ? {
+        hasAccount: !!req.session.user.account,
+        hasToken: !!req.session.user.accessToken,
+        accountUsername: req.session.user.account?.username
+      } : null
+    }
+  });
+});
+
+export { ensureAuthenticated }  // Export middleware for use in other routes
 export default router

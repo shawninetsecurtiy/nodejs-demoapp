@@ -22,6 +22,7 @@
     "lint-fix": "eslint . --fix && prettier --write **/*.mjs *.mjs"
   },
   "dependencies": {
+    "@azure/identity": "^3.3.0",
     "@azure/msal-node": "^2.15.0",
     "applicationinsights": "2.9.6",
     "axios": "^1.7.7",

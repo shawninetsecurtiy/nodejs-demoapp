@@ -23,6 +23,12 @@ param todoMongoConnstr string = ''
 @description('Optional feature: Enable auth with EntraID, and a client id')
 param entraAppId string = ''
 
+@description('Optional feature: Entra tenant ID')
+param entraTenantId string = ''
+
+@description('Optional feature: Auth redirect URI')
+param authRedirectUri string = ''
+
 @description('Managed identity resource ID for ACR')
 param managedIdentityResourceId string
 
@@ -53,6 +59,16 @@ resource appEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
       logAnalyticsConfiguration: {
         customerId: logWorkspace.properties.customerId
         sharedKey: logWorkspace.listKeys().primarySharedKey
+      }
+    }
+    peerAuthentication: {
+      mtls: {
+        enabled: false
+      }
+    }
+    peerTrafficConfiguration: {
+      encryption: {
+        enabled: false
       }
     }
   }
@@ -110,6 +126,14 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'ENTRA_APP_ID'
               value: entraAppId
+            }
+            {
+              name: 'ENTRA_TENANT_ID'
+              value: entraTenantId
+            }
+            {
+              name: 'AUTH_REDIRECT_URI'
+              value: authRedirectUri
             }
           ]
         }
